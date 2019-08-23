@@ -8,23 +8,18 @@ import { getTracks,
   detachParticipantTracks
 } from './util';
 
+import styles from './Twilio.module.css';
 
 const ROOM_NAME = 'Where is Jessica Hyde?';
 
-const styles = {
-  videoContainer: {
-    display: 'flex',
-  }
-}
-
 class Twilio extends Component {
-  state = { identity: undefined, token: undefined };
+  state = { identity: undefined, token: undefined, room: null };
 
   constructor(props) {
     super(props);
 
-    this.video = React.createRef();
-    this.remoteVideo = React.createRef();
+    this.dom = React.createRef();
+    this.sub = React.createRef();
 
     this.joinRoom = this.joinRoom.bind(this);
     this.leaveRoom = this.leaveRoom.bind(this);
@@ -46,41 +41,62 @@ class Twilio extends Component {
   }
 
   componentWillUnmount() {
-    if (this.room) {
-      this.room.disconnect();
+    const { room } = this.state;
+    if (room) {
+      room.disconnect();
     }
   }
 
   render() {
-    return (
-      <>
-        <h3>{ROOM_NAME}</h3>
-        <div style={styles.videoContainer}>
-          <div ref={this.video} />
-          <div ref={this.remoteVideo} />
-        </div>
+    const { room } = this.state;
 
-        <br />
-        <button onClick={this.joinRoom}>Join</button>
-        <button onClick={this.leaveRoom}>Leave</button>
-      </>
+    return (
+      room === null ? (
+        <>
+          <h3>{ROOM_NAME}</h3>
+          <br />
+          <button onClick={this.joinRoom}>Join</button>
+        </>
+      ): (
+        <div className={styles.videoContainer}>
+          <div
+            className={styles.dom}
+            ref={this.dom}
+          />
+          <div className={styles.subContainer}>
+            <div
+              className={styles.sub}
+              ref={this.sub}
+            />
+          </div>
+          <button
+            className={styles.leaveBtn}
+            onClick={this.leaveRoom}
+          >
+            Leave
+          </button>
+        </div>
+      )
     )
   }
 
   leaveRoom() {
     alert('ha, you wish!');
     alert('jk!');
-    this.room.disconnect();
+    const { room } = this.state
+    room.disconnect();
   }
 
   handleParticipantConnected(participant) {
-    this.participantConnected(participant, this.remoteVideo.current);
+    this.participantConnected(participant, this.sub.current);
   }
 
   handleRoomDisconnect() {
-    detachParticipantTracks(this.room.localParticipant);
-    this.room.participants.forEach(detachParticipantTracks);
-    this.room = null;
+    const { room } = this.state
+    detachParticipantTracks(room.localParticipant);
+    room.participants.forEach(detachParticipantTracks);
+
+    this.setState({ room: null });
   }
 
   handleParticipantTrackPublished(container) { 
@@ -114,15 +130,19 @@ class Twilio extends Component {
     const { token } = this.state;
 
     try {
-      const room = await Video.connect(token, { name: ROOM_NAME });
-      this.room = room;
+      const room = await Video.connect(
+        token, 
+        { name: ROOM_NAME, dominantSpeaker: true }
+      );
 
-      attachTracks(getTracks(room.localParticipant), this.video.current)
+      this.setState({ room }, () => {
+        attachTracks(getTracks(room.localParticipant), this.dom.current)
 
-      room.participants.forEach(this.handleParticipantConnected);
+        room.participants.forEach(this.handleParticipantConnected);
+        room.on('participantConnected', this.handleParticipantConnected);
+        room.on('disconnected', this.handleRoomDisconnect);
+      })
 
-      room.on('participantConnected', this.handleParticipantConnected);
-      room.on('disconnected', this.handleRoomDisconnect);
 
     } catch (err) {
       console.error(err);
